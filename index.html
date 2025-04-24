@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Upload Truyện lên R2</title>
+  <title>Upload Truyện (Proxy)</title>
   <style>
     body { font-family: 'Poppins', sans-serif; padding: 20px; }
     input, button { padding: 10px; margin-top: 10px; }
@@ -12,31 +12,12 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
-  <h1>Upload Truyện lên R2</h1>
+  <h1>Upload Truyện (Không CORS)</h1>
   <input type="file" id="fileInput" multiple><br>
   <button id="uploadBtn">Upload Truyện</button>
   <div id="links"></div>
   <script>
-    const token = 'iTtphd2M3TKh-9rgkI7mz_E7GfJdGJfxsdE94gpS';
-    const bucket = 'cdn-truyencuatui';
-    const accountId = '6bdc87c506c509a177b5ab322a2b99b7';
-    const publicUrlBase = 'https://pub-db893ad78a624ce48afff90de84ea64a.r2.dev';
-
-    async function uploadObject(path, data, contentType) {
-      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(path)}`;
-      const res = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': contentType
-        },
-        body: data
-      });
-      if (!res.ok) {
-        throw new Error(`Upload lỗi ${res.status}: ${res.statusText}`);
-      }
-      return `${publicUrlBase}/${encodeURIComponent(path)}`;
-    }
+    const proxyEndpoint = 'https://upload-proxy.truyencuatui.space/upload';
 
     function escapeHtml(str) {
       return str.replace(/&/g, '&amp;')
@@ -44,57 +25,64 @@
                 .replace(/>/g, '&gt;');
     }
 
+    async function uploadToProxy(filePath, fileBlob, mimeType) {
+      const formData = new FormData();
+      formData.append('filePath', filePath);
+      formData.append('file', fileBlob, filePath);
+      const response = await fetch(proxyEndpoint, {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return await response.text();
+    }
+
     document.getElementById('uploadBtn').addEventListener('click', async () => {
-      const input = document.getElementById('fileInput');
-      const files = input.files;
-      if (!files.length) {
-        alert('Chưa chọn file');
-        return;
-      }
+      const files = document.getElementById('fileInput').files;
+      if (!files.length) return alert('Chưa chọn file!');
       const linksDiv = document.getElementById('links');
-      linksDiv.innerHTML = '<p>Đang upload, vui lòng chờ...</p>';
+      linksDiv.innerHTML = '<p>Đang upload...</p>';
       const resultLinks = [];
+
       for (const file of files) {
         try {
           if (file.name.toLowerCase().endsWith('.zip')) {
-            const buffer = await file.arrayBuffer();
-            const zip = await JSZip.loadAsync(buffer);
+            const arrayBuffer = await file.arrayBuffer();
+            const zip = await JSZip.loadAsync(arrayBuffer);
             for (const path in zip.files) {
               const entry = zip.files[path];
               if (entry.dir) continue;
               const ext = path.split('.').pop().toLowerCase();
-              let data, contentType, uploadPath;
+              let data, contentType, filePath;
               if (ext === 'txt') {
                 const text = await entry.async('string');
-                const htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><pre>' 
-                                    + escapeHtml(text) + '</pre></body></html>';
-                data = new Blob([htmlContent], { type: 'text/html' });
-                uploadPath = file.name.replace(/\.zip$/i, '') + '/index.html';
-                contentType = 'text/html';
+                const html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><pre>' +
+                             escapeHtml(text) + '</pre></body></html>';
+                data = new Blob([html], { type: 'text/html' });
+                filePath = file.name.replace(/\.zip$/i, '') + '/index.html';
               } else {
-                const arrayBuffer = await entry.async('arraybuffer');
-                data = arrayBuffer;
-                contentType = 'application/octet-stream';
-                uploadPath = file.name.replace(/\.zip$/i, '') + '/' + path;
+                const buffer = await entry.async('arraybuffer');
+                data = new Blob([buffer], { type: 'application/octet-stream' });
+                filePath = file.name.replace(/\.zip$/i, '') + '/' + path;
               }
-              const link = await uploadObject(uploadPath, data, contentType);
+              const link = await uploadToProxy(filePath, data, data.type);
               resultLinks.push(link);
             }
           } else {
-            const uploadPath = file.name;
-            const link = await uploadObject(uploadPath, file, file.type || 'application/octet-stream');
+            const link = await uploadToProxy(file.name, file, file.type || 'application/octet-stream');
             resultLinks.push(link);
           }
         } catch (err) {
           resultLinks.push(`❌ ${file.name}: ${err.message}`);
         }
       }
+
       linksDiv.innerHTML = '';
-      resultLinks.forEach(l => {
+      resultLinks.forEach(link => {
         const a = document.createElement('a');
-        a.href = l;
+        a.href = link;
         a.target = '_blank';
-        a.textContent = l;
+        a.textContent = link;
         linksDiv.appendChild(a);
       });
     });
