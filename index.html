@@ -2,17 +2,17 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Upload Truyện (Proxy)</title>
+  <title>Upload Truyện (Hiển thị lỗi)</title>
   <style>
     body { font-family: 'Poppins', sans-serif; padding: 20px; }
     input, button { padding: 10px; margin-top: 10px; }
     #links { margin-top: 20px; }
-    #links a { display: block; margin-bottom: 5px; color: #0097a7; text-decoration: none; }
+    #links a, .error { display: block; margin-bottom: 5px; color: #d32f2f; white-space: pre-wrap; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
-  <h1>Upload Truyện (Không CORS)</h1>
+  <h1>Upload Truyện (Hiển thị lỗi)</h1>
   <input type="file" id="fileInput" multiple><br>
   <button id="uploadBtn">Upload Truyện</button>
   <div id="links"></div>
@@ -33,7 +33,10 @@
         method: 'POST',
         body: formData
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`[${response.status}] ${err}`);
+      }
       return await response.text();
     }
 
@@ -53,7 +56,7 @@
               const entry = zip.files[path];
               if (entry.dir) continue;
               const ext = path.split('.').pop().toLowerCase();
-              let data, contentType, filePath;
+              let data, filePath;
               if (ext === 'txt') {
                 const text = await entry.async('string');
                 const html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><pre>' +
@@ -79,11 +82,18 @@
 
       linksDiv.innerHTML = '';
       resultLinks.forEach(link => {
-        const a = document.createElement('a');
-        a.href = link;
-        a.target = '_blank';
-        a.textContent = link;
-        linksDiv.appendChild(a);
+        const div = document.createElement('div');
+        if (link.startsWith('❌')) {
+          div.className = 'error';
+          div.textContent = link;
+        } else {
+          const a = document.createElement('a');
+          a.href = link;
+          a.target = '_blank';
+          a.textContent = link;
+          div.appendChild(a);
+        }
+        linksDiv.appendChild(div);
       });
     });
   </script>
